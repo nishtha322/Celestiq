@@ -17,6 +17,15 @@ async function migrate() {
 
         console.log("Connected to MySQL");
 
+        // Create migrations table if it doesn't exist
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS migrations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                migration_name VARCHAR(255) UNIQUE NOT NULL,
+                executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
         const migrationsPath = path.join(__dirname, "../src/Database");
 
         const files = fs
@@ -25,6 +34,18 @@ async function migrate() {
             .sort();
 
         for (const file of files) {
+
+            // Check if migration already ran
+            const [rows] = await connection.query(
+                "SELECT * FROM migrations WHERE migration_name = ?",
+                [file]
+            );
+
+            if (rows.length > 0) {
+                console.log(`Skipping ${file}`);
+                continue;
+            }
+
             console.log(`Running ${file}...`);
 
             const sql = fs.readFileSync(
@@ -34,12 +55,17 @@ async function migrate() {
 
             await connection.query(sql);
 
-            console.log(` ${file} completed`);
+            await connection.query(
+                "INSERT INTO migrations (migration_name) VALUES (?)",
+                [file]
+            );
+
+            console.log(`${file} completed`);
         }
 
-        console.log("\n Database migration completed successfully.");
+        console.log("\nDatabase migration completed successfully.");
     } catch (error) {
-        console.error(" Migration failed:");
+        console.error("\nMigration failed:");
         console.error(error.message);
     } finally {
         if (connection) {
